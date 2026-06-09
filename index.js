@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const nodemailer = require('nodemailer');
 const { google } = require('googleapis');
 const cors = require('cors');
 
@@ -10,7 +9,7 @@ app.use(express.json());
 
 const OAuth2 = google.auth.OAuth2;
 
-const createTransporter = async () => {
+const getOAuth2Client = () => {
   const oauth2Client = new OAuth2(
     process.env.CLIENT_ID,
     process.env.CLIENT_SECRET,
@@ -21,29 +20,7 @@ const createTransporter = async () => {
     refresh_token: process.env.REFRESH_TOKEN
   });
 
-  const accessToken = await new Promise((resolve, reject) => {
-    oauth2Client.getAccessToken((err, token) => {
-      if (err) {
-        console.error("Failed to create access token:", err);
-        reject("Failed to create access token");
-      }
-      resolve(token);
-    });
-  });
-
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      type: "OAuth2",
-      user: process.env.EMAIL_USER,
-      accessToken,
-      clientId: process.env.CLIENT_ID,
-      clientSecret: process.env.CLIENT_SECRET,
-      refreshToken: process.env.REFRESH_TOKEN
-    }
-  });
-
-  return transporter;
+  return oauth2Client;
 };
 
 app.post('/api/send-otp', async (req, res) => {
@@ -54,13 +31,13 @@ app.post('/api/send-otp', async (req, res) => {
   }
 
   try {
-    const emailTransporter = await createTransporter();
+    const oauth2Client = getOAuth2Client();
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
-    const mailOptions = {
-      from: `Bondify Support <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Your Bondify OTP Verification Code',
-      html: `
+    const subject = 'Your Bondify OTP Verification Code';
+    const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+    
+    const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
           <h2 style="color: #4F46E5; text-align: center;">Bondify Verification</h2>
           <p style="font-size: 16px; color: #333;">Hello,</p>
@@ -72,11 +49,35 @@ app.post('/api/send-otp', async (req, res) => {
           </div>
           <p style="font-size: 14px; color: #666;">This code is valid for 10 minutes. Do not share it with anyone.</p>
         </div>
-      `
-    };
+    `;
 
-    await emailTransporter.sendMail(mailOptions);
-    return res.status(200).json({ message: 'OTP sent successfully' });
+    const messageParts = [
+      `From: "Bondify Support" <${process.env.EMAIL_USER}>`,
+      `To: ${email}`,
+      'Content-Type: text/html; charset=utf-8',
+      'MIME-Version: 1.0',
+      `Subject: ${utf8Subject}`,
+      '',
+      htmlContent
+    ];
+
+    const message = messageParts.join('\n');
+    
+    // The Gmail API requires base64url format
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    return res.status(200).json({ message: 'OTP sent successfully via Gmail API' });
   } catch (error) {
     console.error("Error sending email: ", error);
     return res.status(500).json({ error: 'Failed to send OTP email' });
