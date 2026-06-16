@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('dns').setDefaultResultOrder('ipv4first'); // Fix Render IPv6 ENETUNREACH error
 const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
