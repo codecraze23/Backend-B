@@ -73,10 +73,10 @@ app.post('/api/send-otp', async (req, res) => {
         </div>
     `;
 
-    const textContent = \`Hello,\n\nYour One-Time Password (OTP) for Reminly is: \${otp}\n\nThis code is valid for 10 minutes. Do not share it with anyone.\n\nReminly Support\`;
+    const textContent = `Hello,\n\nYour One-Time Password (OTP) for Reminly is: ${otp}\n\nThis code is valid for 10 minutes. Do not share it with anyone.\n\nReminly Support`;
 
     const mailOptions = {
-      from: \`"Reminly Support" <\${process.env.EMAIL_USER}>\`,
+      from: `"Reminly Support" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: subject,
       text: textContent,
@@ -98,5 +98,5 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(\`Server running on port \${PORT}\`);
+  console.log(`Server running on port ${PORT}`);
 });
