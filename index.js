@@ -8,21 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const OAuth2 = google.auth.OAuth2;
-
-const getOAuth2Client = () => {
-  const oauth2Client = new OAuth2(
-    process.env.CLIENT_ID,
-    process.env.CLIENT_SECRET,
-    "https://developers.google.com/oauthplayground"
-  );
-
-  oauth2Client.setCredentials({
-    refresh_token: process.env.REFRESH_TOKEN
-  });
-
-  return oauth2Client;
-};
+// OAuth2 not needed anymore, using App Passwords
 
 app.post('/api/send-otp', async (req, res) => {
   const { email, otp } = req.body;
@@ -32,19 +18,6 @@ app.post('/api/send-otp', async (req, res) => {
   }
 
   try {
-    const oauth2Client = getOAuth2Client();
-    
-    // Generate access token for Nodemailer
-    const accessToken = await new Promise((resolve, reject) => {
-      oauth2Client.getAccessToken((err, token) => {
-        if (err) {
-          console.error('Failed to create access token', err);
-          reject('Failed to create access token');
-        }
-        resolve(token);
-      });
-    });
-
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -52,8 +25,7 @@ app.post('/api/send-otp', async (req, res) => {
         user: process.env.EMAIL_USER,
         clientId: process.env.CLIENT_ID,
         clientSecret: process.env.CLIENT_SECRET,
-        refreshToken: process.env.REFRESH_TOKEN,
-        accessToken: accessToken
+        refreshToken: process.env.REFRESH_TOKEN
       }
     });
     
