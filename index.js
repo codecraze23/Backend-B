@@ -1,15 +1,28 @@
 require('dotenv').config();
-require('dns').setDefaultResultOrder('ipv4first'); // Fix Render IPv6 ENETUNREACH error
 const express = require('express');
 const { google } = require('googleapis');
 const cors = require('cors');
-const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// OAuth2 not needed anymore, using App Passwords
+const OAuth2 = google.auth.OAuth2;
+
+const getOAuth2Client = () => {
+  const oauth2Client = new OAuth2(
+    process.env.CLIENT_ID,
+    process.env.CLIENT_SECRET,
+    "https://developers.google.com/oauthplayground"
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: process.env.REFRESH_TOKEN
+  });
+
+  return oauth2Client;
+};
 
 app.post('/api/send-otp', async (req, res) => {
   const { email, otp } = req.body;
@@ -19,18 +32,12 @@ app.post('/api/send-otp', async (req, res) => {
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        type: 'OAuth2',
-        user: process.env.EMAIL_USER,
-        clientId: process.env.CLIENT_ID,
-        clientSecret: process.env.CLIENT_SECRET,
-        refreshToken: process.env.REFRESH_TOKEN
-      }
-    });
+    const oauth2Client = getOAuth2Client();
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
     
     const subject = 'Your Reminly OTP Verification Code';
+    const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+    const messageId = `<${crypto.randomUUID()}@reminly.app>`;
     
     const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 10px;">
@@ -48,17 +55,42 @@ app.post('/api/send-otp', async (req, res) => {
 
     const textContent = `Hello,\n\nYour One-Time Password (OTP) for Reminly is: ${otp}\n\nThis code is valid for 10 minutes. Do not share it with anyone.\n\nReminly Support`;
 
-    const mailOptions = {
-      from: `"Reminly Support" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: subject,
-      text: textContent,
-      html: htmlContent
-    };
+    const messageParts = [
+      `From: "Reminly Support" <${process.env.EMAIL_USER}>`,
+      `To: ${email}`,
+      `Subject: ${utf8Subject}`,
+      `Message-ID: ${messageId}`,
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/alternative; boundary="boundary-string"',
+      '',
+      '--boundary-string',
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      textContent,
+      '',
+      '--boundary-string',
+      'Content-Type: text/html; charset="UTF-8"',
+      '',
+      htmlContent,
+      '--boundary-string--'
+    ];
 
-    const result = await transporter.sendMail(mailOptions);
+    const message = messageParts.join('\n');
+    
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
 
-    return res.status(200).json({ message: 'OTP sent successfully via Nodemailer' });
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    return res.status(200).json({ message: 'OTP sent successfully via Gmail API' });
   } catch (error) {
     console.error("Error sending email: ", error);
     return res.status(500).json({ error: 'Failed to send OTP email' });
